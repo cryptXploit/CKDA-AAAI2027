@@ -211,11 +211,11 @@ for idx, dataset_name in enumerate(training_set):
                 score1, score2 = scores.chunk(2,0)
                 feat1, feat2 = feats.chunk(2,0)
 
-                # Privacy noise
-                if model.training:
-                    noise_std = 0.005
-                    feat1 = feat1 + torch.randn_like(feat1) * noise_std
-                    feat2 = feat2 + torch.randn_like(feat2) * noise_std
+                # Privacy noise Layer 01
+                # if model.training:
+                #     noise_std = 0.005
+                #     feat1 = feat1 + torch.randn_like(feat1) * noise_std
+                #     feat2 = feat2 + torch.randn_like(feat2) * noise_std
 
                 loss_id = criterion_ID(score1, label1.long()) + criterion_ID(score2, label2.long())
                 loss_tri = criterion_Tri(feats, feats, labels)
