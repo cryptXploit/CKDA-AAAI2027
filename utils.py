@@ -42,7 +42,7 @@ def get_old_proto_chunked(model, data_path, img_size, chunk_size=100, batch_size
     mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).cuda()
     std  = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).cuda()
 
-    # Memory‑mapped loading (unchanged)
+    # Memory‑mapped loading
     rgb_imgs = np.load(os.path.join(data_path, 'train_rgb_resized_img.npy'), mmap_mode='r')
     rgb_labels = np.load(os.path.join(data_path, 'train_rgb_resized_label.npy'), mmap_mode='r')
     ir_imgs = np.load(os.path.join(data_path, 'train_ir_resized_img.npy'), mmap_mode='r')
@@ -51,7 +51,7 @@ def get_old_proto_chunked(model, data_path, img_size, chunk_size=100, batch_size
     all_feat_vis, all_id_vis = [], []
     all_feat_inf, all_id_inf = [], []
     
-    # ----- ১. ফিচার ডাইমেনশন ধরার জন্য ভ্যারিয়েবল -----
+    # ফিচার ডাইমেনশন ধরার জন্য ভ্যারিয়েবল
     feat_dim = None
 
     for imgs, labs, mod_val, name in [(rgb_imgs, rgb_labels, 1, 'VIS'), (ir_imgs, ir_labels, 0, 'IR')]:
@@ -77,7 +77,6 @@ def get_old_proto_chunked(model, data_path, img_size, chunk_size=100, batch_size
                     with torch.no_grad():
                         feats = model(inp, mod_batch)    # (scores, features, prompt)
                         
-                        # ----- ২. প্রথমবার ফিচার ডাইমেনশন ধরা -----
                         if feat_dim is None:
                             feat_dim = feats.shape[1]          # e.g., 768
                         
@@ -96,7 +95,6 @@ def get_old_proto_chunked(model, data_path, img_size, chunk_size=100, batch_size
 
                     pbar.update(len(lbl_batch))
 
-    # ----- ৩. make_proto ফাংশনে model.num_features এর বদলে feat_dim ব্যবহার -----
     def make_proto(feat_list, ids):
         if not feat_list:
             return torch.empty(0, feat_dim if feat_dim is not None else 0), []
@@ -108,11 +106,13 @@ def get_old_proto_chunked(model, data_path, img_size, chunk_size=100, batch_size
             mask = [i for i, x in enumerate(ids) if x == lbl]
             means.append(feats[mask].mean(dim=0, keepdim=True))
             counts.append(len(mask))
-        return torch.cat(means, dim=0), unique, torch.tensor(counts)
+        return torch.cat(means, dim=0), unique, torch.tensor(counts).cuda()
 
     dim = feat_dim if feat_dim is not None else 0
     vis_proto, vis_names, vis_counts = make_proto(all_feat_vis, all_id_vis)
     inf_proto, inf_names, inf_counts = make_proto(all_feat_inf, all_id_inf)
+    
+    # 🟢 6 টি ভ্যালু রিটার্ন করছে, যা train.py এর লেয়ার ৩ এর জন্য একদম পারফেক্ট
     return vis_proto, vis_names, inf_proto, inf_names, vis_counts, inf_counts
 
 # ========== Affinity and Cosine Similarity ==========
