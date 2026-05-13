@@ -11,8 +11,10 @@ cfg.DATA_PATH_LLCM = '/home/cuizhenyu/VI-LReID/Dataset/LLCM/'
 cfg.DATA_PATH_VCM = '/home/cuizhenyu/VI-LReID/Dataset/HITSZ-VCM/'
 cfg.PRETRAIN_PATH = 'jx_vit_base_p16_224-80ecf9dd.pth'
 
+cfg.LR_SCHEDULER = 'cosine'  # cosine annealing
+
 cfg.START_EPOCH = 1
-cfg.MAX_EPOCH = 60
+cfg.MAX_EPOCH = 80
 
 cfg.H = 256
 cfg.W = 128
@@ -45,6 +47,9 @@ cfg.WEIGHT_DECAY_BIAS = 1e-4
 cfg.BIAS_LR_FACTOR = 1
 
 cfg.LR_PRETRAIN = 0.5
-cfg.LR_MIN = 0.5
-cfg.LR_INIT = 0.01
+cfg.LR_MIN = 1e-5          # absolute minimum learning rate
+cfg.LR_INIT = 0.001
 cfg.WARMUP_EPOCHS = 5
+
+
+
