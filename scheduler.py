@@ -46,7 +46,7 @@ class Scheduler:
                 if self._initial_param_group_field not in group:
                     raise KeyError(f"{self._initial_param_group_field} missing from param_groups[{i}]")
         self.base_values = [group[self._initial_param_group_field] for group in self.optimizer.param_groups]
-        self.metric = None  # any point to having this for all?
+        self.metric = None
         self.noise_range_t = noise_range_t
         self.noise_pct = noise_pct
         self.noise_type = noise_type
@@ -97,7 +97,6 @@ class Scheduler:
                 g.manual_seed(self.noise_seed + t)
                 if self.noise_type == 'normal':
                     while True:
-                        # resample if noise out of percent limit, brute force but shouldn't spin much
                         noise = torch.randn(1, generator=g).item()
                         if abs(noise) < self.noise_pct:
                             break
@@ -107,15 +106,8 @@ class Scheduler:
         return lrs
 
 
-
 class CosineLRScheduler(Scheduler):
-    """
-    Cosine decay with restarts.
-    This is described in the paper https://arxiv.org/abs/1608.03983.
-    Inspiration from
-    https://github.com/allenai/allennlp/blob/master/allennlp/training/learning_rate_schedulers/cosine.py
-    """
-
+    """ Cosine decay with restarts. """
     def __init__(self,
                  optimizer: torch.optim.Optimizer,
                  t_initial: int,
@@ -139,9 +131,6 @@ class CosineLRScheduler(Scheduler):
 
         assert t_initial > 0
         assert lr_min >= 0
-        if t_initial == 1 and t_mul == 1 and decay_rate == 1:
-            _logger.warning("Cosine annealing scheduler will have no effect on the learning "
-                           "rate since t_initial = t_mul = eta_mul = 1.")
         self.t_initial = t_initial
         self.t_mul = t_mul
         self.lr_min = lr_min
@@ -208,11 +197,11 @@ class CosineLRScheduler(Scheduler):
             return int(math.floor(-self.t_initial * (self.t_mul ** cycles - 1) / (1 - self.t_mul)))
 
 
-
 def create_scheduler(cfg, optimizer):
 
     num_epochs = cfg.MAX_EPOCH
-    lr_min = cfg.LR_MIN * cfg.BASE_LR
+    # lr_min = cfg.LR_MIN * cfg.BASE_LR   # ❌ আগের ভুল
+    lr_min = cfg.LR_MIN                   # ✅ সরাসরি absolute LR
     warmup_lr_init = cfg.LR_INIT * cfg.BASE_LR
     warmup_t = cfg.WARMUP_EPOCHS
 
@@ -220,15 +209,15 @@ def create_scheduler(cfg, optimizer):
             optimizer,
             t_initial=num_epochs,
             lr_min=lr_min,
-            t_mul= 1.,
+            t_mul=1.,
             decay_rate=1.0,
             warmup_lr_init=warmup_lr_init,
             warmup_t=warmup_t,
             cycle_limit=1,
             t_in_epochs=True,
             noise_range_t=None,
-            noise_pct= 0.67,
-            noise_std= 1.,
+            noise_pct=0.67,
+            noise_std=1.,
             noise_seed=42,
         )
 
