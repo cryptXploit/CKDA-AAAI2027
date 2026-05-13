@@ -1,5 +1,3 @@
-# train.py
-
 from dataloader import SYSUData, RegDBData, LLCMData, VCMData, TrainData, TestData_Vis, TestData_Inf, GenIdx, IdentitySampler
 from datamanager import process_gallery_sysu, process_query_sysu, process_test_regdb, process_query_llcm, process_gallery_llcm, process_query_vcm, process_gallery_vcm, process_train_regdb, process_train_sysu, process_train_llcm, process_train_vcm
 import numpy as np
@@ -20,7 +18,7 @@ from loss.MSEL import MSEL
 from loss.DCL import DCL
 from utils import AverageMeter, set_seed, get_normal_affinity, cosine_similarity, get_old_proto_chunked
 from transforms import transform_rgb, transform_rgb2gray, transform_thermal, transform_test
-from optimizer import make_optimizer
+# from optimizer import make_optimizer
 from config.config import cfg
 from eval_metrics import eval_sysu, eval_regdb
 import argparse
@@ -29,7 +27,6 @@ import torch.nn.functional as F
 import sys
 from utils import Logger
 from tqdm import tqdm
-
 
 ######################################################################################
 
@@ -74,12 +71,10 @@ if os.path.exists(args.logs_dir) is False:
     os.makedirs(args.logs_dir)
 log_name = 'log.txt'
 sys.stdout = Logger(osp.join(args.logs_dir, log_name))
-# sys.stderr = sys.stdout   # tqdm যাতে লগে না ঢোকে, এটা বন্ধ রাখা ভালো
+
 cfg.merge_from_list(args.opts)
 
-
-cfg.MAX_EPOCH = 20   # অল্প এপকের জন্য
-
+# ⚠️ পরিবর্তন: cfg.MAX_EPOCH = 10 লাইনটি মুছে ফেলা হয়েছে। এখন এটি config ফাইল বা কমান্ড লাইন থেকে মান নেবে।
 
 cfg.freeze()
 print("==========\nArgs:{}\n==========".format(args))
@@ -107,6 +102,7 @@ for idx, dataset_name in enumerate(training_set):
     elif dataset_name == 'vcm':
         data_path = cfg.DATA_PATH_VCM
         trainset_rgb = VCMData(data_path, transform1=transform_rgb, transform2=transform_thermal)
+    
     color_pos_rgb, thermal_pos_rgb = GenIdx(trainset_rgb.train_color_label, trainset_rgb.train_thermal_label)
 
     num_classes = len(np.unique(trainset_rgb.train_color_label))
@@ -181,7 +177,6 @@ for idx, dataset_name in enumerate(training_set):
         gall_cams.append(gall_cam if training_set[ii] == 'sysu' else None)
 
     def train(epoch, model, scheduler, optimizer, scaler):
-        # (আগের মতোই, কোন পরিবর্তন নেই)
         loss_meter = AverageMeter()
         loss_ce_meter = AverageMeter()
         loss_tri_meter = AverageMeter()
@@ -210,12 +205,6 @@ for idx, dataset_name in enumerate(training_set):
 
                 score1, score2 = scores.chunk(2,0)
                 feat1, feat2 = feats.chunk(2,0)
-
-                # Privacy noise Layer 01
-                # if model.training:
-                #     noise_std = 0.005
-                #     feat1 = feat1 + torch.randn_like(feat1) * noise_std
-                #     feat2 = feat2 + torch.randn_like(feat2) * noise_std
 
                 loss_id = criterion_ID(score1, label1.long()) + criterion_ID(score2, label2.long())
                 loss_tri = criterion_Tri(feats, feats, labels)
@@ -354,14 +343,17 @@ for idx, dataset_name in enumerate(training_set):
     best_mAP = 0
     print('==> Start Training...')
     start_epoch = cfg.START_EPOCH
+    
+    # ⚠️ পরিবর্তন: Resume ব্লকটি ফিক্স করা হয়েছে (শুধু model state load হবে)
     if args.resume and os.path.isfile(args.resume):
-        checkpoint = torch.load(args.resume)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        if scaler: scaler.load_state_dict(checkpoint['scaler_state_dict'])
-        start_epoch = checkpoint['epoch'] + 1
-        print(f'[!INFO] Resumed from epoch {checkpoint["epoch"]}')
+        checkpoint = torch.load(args.resume, map_location=device)
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
+            start_epoch = checkpoint['epoch'] + 1
+            print(f'[!INFO] Resumed model weights from epoch {checkpoint["epoch"]}')
+        else:
+            model.load_state_dict(checkpoint)
+            print(f'[!INFO] Resumed model weights from: {args.resume}')
 
     for epoch in range(start_epoch, cfg.MAX_EPOCH + 1):
         sampler_rgb = IdentitySampler(trainset_rgb.train_color_label, trainset_rgb.train_thermal_label, color_pos_rgb,thermal_pos_rgb, cfg.BATCH_SIZE, per_img=cfg.NUM_POS)
@@ -402,12 +394,12 @@ for idx, dataset_name in enumerate(training_set):
                 print("[INFO] Prototype extraction completed.")
 
                 C = 1.0                     # L2 norm clipping bound
-                target_epsilon = 0.1        # আপনি 10, 8, 5 দিয়ে পরীক্ষা করবেন
+                target_epsilon = 10.0        # Privacy Budget
                 target_delta = 1e-5
 
                 # class‑wise sensitivity: Δf = C / n_i
                 with torch.no_grad():
-                    # Visible prototypes – সরাসরি গড় ব্যবহার
+                    # Visible prototypes
                     vis_sens = C / vis_counts.float().clamp(min=1)
                     sigma_vis = vis_sens.view(-1, 1).expand_as(vis_features_mean) * math.sqrt(2.0 * math.log(1.25 / target_delta)) / target_epsilon
                     noise_vis = torch.randn_like(vis_features_mean) * sigma_vis
@@ -418,7 +410,6 @@ for idx, dataset_name in enumerate(training_set):
                     sigma_inf = inf_sens.view(-1, 1).expand_as(inf_features_mean) * math.sqrt(2.0 * math.log(1.25 / target_delta)) / target_epsilon
                     noise_inf = torch.randn_like(inf_features_mean) * sigma_inf
                     inf_priv = F.normalize(inf_features_mean + noise_inf, p=2, dim=-1)
-                
                 
                 # ── সংরক্ষণ ──
                 proto_type = {
